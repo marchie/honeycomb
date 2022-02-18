@@ -1,0 +1,38 @@
+{
+  "name": "honeycomb",
+  "version": "0.0.1",
+  "description": "Experimenting with setting up Contentful in an automated way",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc -w",
+    "test": "jest",
+    "lint": "eslint --ignore-path .gitignore --ext .ts .",
+    "prettier": "prettier --ignore-path .gitignore \"**/*.+(json|ts)\"",
+    "format": "npm run prettier -- --write",
+    "check-format": "npm run prettier -- --list-different"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/marchie/honeycomb.git"
+  },
+  "author": "",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/marchie/honeycomb/issues"
+  },
+  "homepage": "https://github.com/marchie/honeycomb#readme",
+  "devDependencies": {
+    "@types/jest": "^27.4.0",
+    "@types/node": "^16.11.25",
+    "@typescript-eslint/eslint-plugin": "^5.12.0",
+    "@typescript-eslint/parser": "^5.12.0",
+    "eslint": "^8.9.0",
+    "eslint-config-prettier": "^8.3.0",
+    "jest": "^27.5.1",
+    "prettier": "^2.5.1",
+    "ts-jest": "^27.1.3",
+    "ts-node": "^10.5.0",
+    "typescript": "^4.5.5"
+  }
+}

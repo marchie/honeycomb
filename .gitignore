@@ -1,0 +1,9 @@
+node_modules
+coverage
+*.d.ts
+*.js
+!jest.config.js
+
+## IDEs
+# IntelliJ IDEA
+.idea
