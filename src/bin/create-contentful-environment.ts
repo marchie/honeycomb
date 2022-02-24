@@ -60,7 +60,10 @@ import { DynamoDBRecorder } from "../lib/aws/DynamoDBRecorder";
   const ssm = new SSM({ client: awsSSMClient });
 
   const dynamoDBClient = new DynamoDBClient({});
-  const dynamoDBDocumentClient = DynamoDBDocumentClient.from(dynamoDBClient);
+  const dynamoDBDocumentClient = DynamoDBDocumentClient.from(
+    dynamoDBClient,
+    {},
+  );
 
   try {
     const [accessToken, spaceId, tableName] = await Promise.all([

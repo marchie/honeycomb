@@ -3,10 +3,7 @@ import Migration, {
   MigrationFunction,
 } from "contentful-migration";
 
-const migrationFunction: MigrationFunction = (
-  migration: Migration,
-  context?: MigrationContext,
-): void => {
+export = function (migration: Migration, context?: MigrationContext) {
   const articleContentType = migration
     .createContentType("article")
     .name("Article")
@@ -37,6 +34,4 @@ const migrationFunction: MigrationFunction = (
     .required(true);
 
   articleContentType.displayField(titleField.id);
-};
-
-export default migrationFunction;
+} as MigrationFunction;

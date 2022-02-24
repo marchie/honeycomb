@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 import * as yargs from "yargs";
-import { MigrationFunction, runMigration } from "contentful-migration";
+import { runMigration } from "contentful-migration";
 import { ContentfulMigrator } from "../lib/contentful/ContentfulMigrator";
 import { SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 import { SecretsManager } from "../lib/aws/SecretsManager";
 import { SSMClient } from "@aws-sdk/client-ssm";
 import { SSM } from "../lib/aws/SSM";
-import migration_001 from "../migrations/2022-02-18_16-21_create-article-content-type";
 import { Client } from "../lib/contentful/Client";
 import { DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { DynamoDBRecorder } from "../lib/aws/DynamoDBRecorder";
+import { readdir } from "fs/promises";
+import { resolve } from "path";
 
 (async () => {
   const options = yargs
@@ -36,12 +37,18 @@ import { DynamoDBRecorder } from "../lib/aws/DynamoDBRecorder";
       describe: "Target Environment ID",
       type: "string",
       demandOption: true,
+    })
+    .option("migrationsDirectory", {
+      describe: "The local directory containing the migrations files",
+      type: "string",
+      demandOption: true,
     }).argv;
   const {
     accessTokenSecretId,
     spaceIdParameterStoreName,
     dynamoDBTableNameParameterStoreName,
     environmentId,
+    migrationsDirectory,
   } = options;
 
   const awsSecretsManagerClient = new SecretsManagerClient({});
@@ -56,11 +63,14 @@ import { DynamoDBRecorder } from "../lib/aws/DynamoDBRecorder";
   const dynamoDBDocumentClient = DynamoDBDocumentClient.from(dynamoDBClient);
 
   try {
-    const [accessToken, spaceId, tableName] = await Promise.all([
-      secretsManager.getSecretString(accessTokenSecretId),
-      ssm.getParameterString(spaceIdParameterStoreName),
-      ssm.getParameterString(dynamoDBTableNameParameterStoreName),
-    ]);
+    const [accessToken, spaceId, tableName, migrationFiles] = await Promise.all(
+      [
+        secretsManager.getSecretString(accessTokenSecretId),
+        ssm.getParameterString(spaceIdParameterStoreName),
+        ssm.getParameterString(dynamoDBTableNameParameterStoreName),
+        readdir(resolve(migrationsDirectory)),
+      ],
+    );
 
     const managementClient = Client({
       accessToken,
@@ -80,19 +90,19 @@ import { DynamoDBRecorder } from "../lib/aws/DynamoDBRecorder";
       recorder,
     });
 
-    const migrationFunctions: MigrationFunction[] = [migration_001];
+    const migrationFilePaths: string[] = [];
 
-    await migrator.RunMigrations({
-      migrationFunctions,
-      spaceId,
+    for (const file of migrationFiles) {
+      migrationFilePaths.push(resolve(migrationsDirectory, file));
+    }
+
+    const executedMigrations = await migrator.RunMigrations({
+      migrationFilePaths,
       environmentId,
     });
 
-    console.log(
-      `${migrationFunctions.length} Contentful migration function${
-        migrationFunctions.length !== 1 ? "s" : ""
-      } ran successfully`,
-    );
+    console.log(`${executedMigrations.length} migration(s) ran successfully:
+${executedMigrations.join("\n")}`);
   } catch (e) {
     console.error(`Error running Contentful migrations: ${e}`);
   }

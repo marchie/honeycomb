@@ -5,12 +5,7 @@ import {
   PutMigrationProps,
   Recorder,
 } from "../recorder";
-import {
-  CreateTableCommand,
-  DescribeTableCommand,
-  DynamoDBClient,
-  TableAlreadyExistsException,
-} from "@aws-sdk/client-dynamodb";
+import { CreateTableCommand, DynamoDBClient } from "@aws-sdk/client-dynamodb";
 import {
   DeleteCommand,
   DynamoDBDocumentClient,
@@ -50,14 +45,15 @@ export class DynamoDBRecorder implements Recorder {
   }: CreateEnvironmentFromSourceProps): Promise<void> {
     const { tableCreated } = await this.createTableIfNotExists();
 
-    let previouslyExecutedMigrations: Set<String>;
-
     if (tableCreated) {
-      previouslyExecutedMigrations = new Set<String>();
-    } else {
-      previouslyExecutedMigrations = await this.getAllMigrationsForEnvironment(
-        sourceEnvironmentId,
-      );
+      return;
+    }
+
+    const previouslyExecutedMigrations =
+      await this.getAllMigrationsForEnvironment(sourceEnvironmentId);
+
+    if (previouslyExecutedMigrations.size === 0) {
+      return;
     }
 
     await this.putAllMigrationsForEnvironment(
@@ -96,7 +92,7 @@ export class DynamoDBRecorder implements Recorder {
       },
       UpdateExpression: "ADD Migrations :m",
       ExpressionAttributeValues: {
-        ":m": new Set<String>(migrationId),
+        ":m": new Set<String>([migrationId]),
       },
       ReturnValues: "NONE",
     });
@@ -112,10 +108,6 @@ export class DynamoDBRecorder implements Recorder {
           AttributeName: "EnvironmentId",
           AttributeType: "S",
         },
-        {
-          AttributeName: "Migrations",
-          AttributeType: "SS",
-        },
       ],
       KeySchema: [
         {
@@ -123,6 +115,7 @@ export class DynamoDBRecorder implements Recorder {
           KeyType: "HASH",
         },
       ],
+      BillingMode: "PAY_PER_REQUEST",
     });
 
     try {
@@ -132,7 +125,7 @@ export class DynamoDBRecorder implements Recorder {
         tableCreated: true,
       };
     } catch (e: any) {
-      if (e.name && e.name === "TableAlreadyExistsException") {
+      if (e.name && e.name === "ResourceInUseException") {
         return {
           tableCreated: false,
         };
@@ -157,9 +150,7 @@ export class DynamoDBRecorder implements Recorder {
     );
 
     if (!Item) {
-      throw new Error(
-        `error getting migrations for environment "${environmentId}: no Item returned from DynamoDB`,
-      );
+      return new Set<String>();
     }
 
     return Item.Migrations;

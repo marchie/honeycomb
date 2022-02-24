@@ -36,6 +36,8 @@ describe("Contentful Migrator", () => {
     mockDeleteEnvironment.mockReset();
     mockListAppliedMigrationsFromEnvironment.mockReset();
     mockPutMigration.mockReset();
+
+    recorder = new MockRecorder();
   });
 
   describe("CreateEnvironmentFromSource", () => {
@@ -44,6 +46,18 @@ describe("Contentful Migrator", () => {
     let mockCreateWithId: jest.Mock;
 
     beforeEach(() => {
+      sourceEnvironmentId = "master";
+      targetEnvironmentId = "release";
+
+      mockCreateWithId = jest.fn();
+      managementClient.environment.createWithId = mockCreateWithId;
+
+      mockCreateWithId.mockResolvedValue({
+        name: targetEnvironmentId,
+      });
+
+      mockCreateEnvironmentFromSource.mockResolvedValue(null);
+
       migrator = new ContentfulMigrator({
         runMigration,
         managementClient,
@@ -51,23 +65,11 @@ describe("Contentful Migrator", () => {
         spaceId,
         recorder,
       });
-
-      sourceEnvironmentId = "master";
-      targetEnvironmentId = "release";
-
-      mockCreateWithId = jest.fn();
-      managementClient.environment.createWithId = mockCreateWithId;
     });
 
     test(`Given a Contentful Migrator
 When CreateEnvironmentFromSource is called
 Then a new environment is created in the Contentful space`, async () => {
-      mockCreateWithId.mockResolvedValue({
-        name: targetEnvironmentId,
-      });
-
-      mockCreateEnvironmentFromSource.mockResolvedValue(null);
-
       await migrator.CreateEnvironmentFromSource({
         sourceEnvironmentId,
         targetEnvironmentId,
@@ -83,8 +85,18 @@ Then a new environment is created in the Contentful space`, async () => {
       expect(mockCreateWithId.mock.calls[0][1]).toEqual({
         name: targetEnvironmentId,
       });
+    });
+
+    test(`Given a Contentful Migrator
+When CreateEnvironmentFromSource is called
+Then a record of the new environment is created`, async () => {
+      await migrator.CreateEnvironmentFromSource({
+        sourceEnvironmentId,
+        targetEnvironmentId,
+      });
+
       expect(mockCreateEnvironmentFromSource.mock.calls.length).toBe(1);
-      expect(mockCreateEnvironmentFromSource.mock.calls[0][0]).toBe({
+      expect(mockCreateEnvironmentFromSource.mock.calls[0][0]).toEqual({
         sourceEnvironmentId,
         targetEnvironmentId,
       });
@@ -93,12 +105,6 @@ Then a new environment is created in the Contentful space`, async () => {
     test(`Given a Contentful Migrator
 When CreateEnvironmentFromSource is called
 Then the name of the created environment is resolved`, async () => {
-      mockCreateWithId.mockResolvedValue({
-        name: targetEnvironmentId,
-      });
-
-      mockCreateEnvironmentFromSource.mockResolvedValue(null);
-
       await expect(
         migrator.CreateEnvironmentFromSource({
           sourceEnvironmentId,
@@ -110,8 +116,8 @@ Then the name of the created environment is resolved`, async () => {
     test(`Given a Contentful Migrator
 When CreateEnvironmentFromSource is called
 And the Contentful Management client rejects
-And the recorder method is not called
-Then the method rejects`, async () => {
+Then a record of the new environment is not created
+And the method rejects`, async () => {
       const expectedError = new Error("FUBAR");
 
       mockCreateWithId.mockRejectedValue(expectedError);
@@ -132,10 +138,6 @@ And the recorder method rejects
 Then the method rejects`, async () => {
       const expectedError = new Error("FUBAR");
 
-      mockCreateWithId.mockResolvedValue({
-        name: targetEnvironmentId,
-      });
-
       mockCreateEnvironmentFromSource.mockRejectedValue(expectedError);
 
       await expect(
@@ -149,15 +151,14 @@ Then the method rejects`, async () => {
     });
   });
 
-  describe("RunMigrationFunctions", () => {
-    let migrationFunctions: MigrationFunction[];
+  describe("RunMigrations", () => {
+    let migrationFilePaths: string[];
     let environmentId: string;
-    let answerYesToAllPrompts: boolean;
     let mockRunMigration: jest.Mock;
     let mockGetEnvironment: jest.Mock;
 
     beforeEach(() => {
-      mockRunMigration = jest.fn();
+      mockRunMigration = jest.fn().mockResolvedValue(null);
 
       migrator = new ContentfulMigrator({
         runMigration: mockRunMigration,
@@ -167,23 +168,37 @@ Then the method rejects`, async () => {
         recorder,
       });
 
-      migrationFunctions = [jest.fn()];
+      migrationFilePaths = [
+        "path/to/2022-02-24_16-32-00_previouslyRunMigration.ts",
+        "path/to/2022-02-24_16-32-01_previouslyRunMigration.ts",
+        "path/to/2022-02-24_16-32-02_migration.ts",
+        "path/to/2022-02-24_16-32-03_migration.ts",
+        "a/different/path/to/2022-02-24_16-32-04_migration.ts",
+      ];
       environmentId = "release";
-      answerYesToAllPrompts = true;
 
       mockGetEnvironment = jest.fn();
       managementClient.environment.get = mockGetEnvironment;
-    });
 
-    test(`Given a Contentful Migrator
-When RunMigrationFunctions is called
-Then the environment is retrieved from Contentful`, async () => {
       mockGetEnvironment.mockResolvedValue({
         sys: {},
       });
 
+      mockListAppliedMigrationsFromEnvironment.mockResolvedValue(
+        new Set<String>([
+          "2022-02-24_16-32-00_previouslyRunMigration",
+          "2022-02-24_16-32-01_previouslyRunMigration",
+        ]),
+      );
+
+      mockPutMigration.mockResolvedValue(null);
+    });
+
+    test(`Given a Contentful Migrator
+When RunMigrations is called
+Then the environment is retrieved from Contentful`, async () => {
       await migrator.RunMigrations({
-        migrationFunctions,
+        migrationFilePaths,
         environmentId,
       });
 
@@ -195,7 +210,7 @@ Then the environment is retrieved from Contentful`, async () => {
     });
 
     test(`Given a Contentful Migrator
-When RunMigrationFunctions is called
+When RunMigrations is called
 And the provided environment ID is the master environment
 Then the method rejects with an error`, async () => {
       mockGetEnvironment.mockResolvedValue({
@@ -212,7 +227,7 @@ Then the method rejects with an error`, async () => {
 
       await expect(
         migrator.RunMigrations({
-          migrationFunctions,
+          migrationFilePaths,
           environmentId,
         }),
       ).rejects.toThrowError(
@@ -221,7 +236,33 @@ Then the method rejects with an error`, async () => {
     });
 
     test(`Given a Contentful Migrator
-When RunMigrationFunctions is called
+When RunMigrations is called
+And the provided environment ID is the master environment
+Then previously run migrations are not retrieved`, async () => {
+      mockGetEnvironment.mockResolvedValue({
+        sys: {
+          aliases: [
+            {
+              sys: {
+                id: "master",
+              },
+            },
+          ],
+        },
+      });
+
+      await expect(
+        migrator.RunMigrations({
+          migrationFilePaths,
+          environmentId,
+        }),
+      ).rejects.toThrow();
+
+      expect(mockListAppliedMigrationsFromEnvironment).not.toBeCalled();
+    });
+
+    test(`Given a Contentful Migrator
+When RunMigrations is called
 And the provided environment ID is the master environment
 Then no runMigration functions are called`, async () => {
       mockGetEnvironment.mockResolvedValue({
@@ -238,7 +279,7 @@ Then no runMigration functions are called`, async () => {
 
       await expect(
         migrator.RunMigrations({
-          migrationFunctions,
+          migrationFilePaths,
           environmentId,
         }),
       ).rejects.toThrow();
@@ -247,160 +288,260 @@ Then no runMigration functions are called`, async () => {
     });
 
     test(`Given a Contentful Migrator
-And one migration function
-When RunMigrationFunctions is called
-And the provided environment ID is not the master environment
-Then runMigration is called with the migration function`, async () => {
+When RunMigrations is called
+And the provided environment ID is the master environment
+Then the migration is not recorded`, async () => {
       mockGetEnvironment.mockResolvedValue({
-        sys: {},
-      });
-
-      const migrationFunctions: MigrationFunction[] = [
-        () => {
-          return Promise.resolve(0);
+        sys: {
+          aliases: [
+            {
+              sys: {
+                id: "master",
+              },
+            },
+          ],
         },
-      ];
-
-      await migrator.RunMigrations({
-        migrationFunctions,
-        environmentId,
       });
 
-      expect(mockRunMigration.mock.calls.length).toBe(1);
-      expect(mockRunMigration.mock.calls[0][0]).toEqual({
-        migrationFunction: migrationFunctions[0],
-        accessToken,
-        spaceId,
-        environmentId,
-        yes: answerYesToAllPrompts,
-      });
+      await expect(
+        migrator.RunMigrations({
+          migrationFilePaths,
+          environmentId,
+        }),
+      ).rejects.toThrow();
+
+      expect(mockPutMigration).not.toBeCalled();
     });
 
     test(`Given a Contentful Migrator
-And multiple migration functions
-When RunMigrationFunctions is called
-Then runMigration is called with each migration function in order`, async () => {
-      mockGetEnvironment.mockResolvedValue({
-        sys: {},
+When RunMigrations is called
+Then previously run migrations for the environment are retrieved from the recorder`, async () => {
+      await migrator.RunMigrations({
+        migrationFilePaths,
+        environmentId,
       });
 
-      const migrationFunctions: MigrationFunction[] = [
-        () => {
-          return Promise.resolve(0);
+      expect(mockListAppliedMigrationsFromEnvironment.mock.calls.length).toBe(
+        1,
+      );
+      expect(mockListAppliedMigrationsFromEnvironment.mock.calls[0][0]).toEqual(
+        {
+          environmentId,
         },
-        () => {
-          return Promise.resolve(1);
-        },
-        () => {
-          return Promise.resolve(2);
-        },
-      ];
+      );
+    });
 
+    test(`Given a Contentful Migrator
+When RunMigrations is called
+And the ListAppliedMigrationsFromEnvironment method rejects
+Then the method rejects with the error`, async () => {
+      const expectedError = new Error("FUBAR");
+
+      mockListAppliedMigrationsFromEnvironment.mockRejectedValue(expectedError);
+
+      await expect(
+        migrator.RunMigrations({
+          migrationFilePaths,
+          environmentId,
+        }),
+      ).rejects.toThrowError(expectedError);
+    });
+
+    test(`Given a Contentful Migrator
+When RunMigrations is called
+And the ListAppliedMigrationsFromEnvironment method rejects
+Then no migrations are executed`, async () => {
+      const error = new Error("FUBAR");
+
+      mockListAppliedMigrationsFromEnvironment.mockRejectedValue(error);
+
+      await expect(
+        migrator.RunMigrations({
+          migrationFilePaths,
+          environmentId,
+        }),
+      ).rejects.toThrow();
+
+      expect(mockRunMigration).not.toBeCalled();
+    });
+
+    test(`Given a Contentful Migrator
+When RunMigrations is called
+And the ListAppliedMigrationsFromEnvironment method rejects
+Then no migrations are recorded`, async () => {
+      const error = new Error("FUBAR");
+
+      mockListAppliedMigrationsFromEnvironment.mockRejectedValue(error);
+
+      await expect(
+        migrator.RunMigrations({
+          migrationFilePaths,
+          environmentId,
+        }),
+      ).rejects.toThrow();
+
+      expect(mockPutMigration).not.toBeCalled();
+    });
+
+    test(`Given a Contentful Migrator
+When RunMigrations is called
+Then runMigration is called with each new migration file in order`, async () => {
       await migrator.RunMigrations({
-        migrationFunctions,
+        migrationFilePaths,
         environmentId,
       });
 
       expect(mockRunMigration.mock.calls.length).toBe(3);
       expect(mockRunMigration.mock.calls[0][0]).toEqual({
-        migrationFunction: migrationFunctions[0],
+        filePath: migrationFilePaths[2],
         accessToken,
         spaceId,
         environmentId,
-        yes: answerYesToAllPrompts,
+        yes: true,
       });
       expect(mockRunMigration.mock.calls[1][0]).toEqual({
-        migrationFunction: migrationFunctions[1],
+        filePath: migrationFilePaths[3],
         accessToken,
         spaceId,
         environmentId,
-        yes: answerYesToAllPrompts,
+        yes: true,
       });
       expect(mockRunMigration.mock.calls[2][0]).toEqual({
-        migrationFunction: migrationFunctions[2],
+        filePath: migrationFilePaths[4],
         accessToken,
         spaceId,
         environmentId,
-        yes: answerYesToAllPrompts,
+        yes: true,
       });
     });
 
     test(`Given a Contentful Migrator
-When RunMigrationFunctions is called
-And a migration function rejects
-Then the method rejects with the error`, async () => {
-      mockGetEnvironment.mockResolvedValue({
-        sys: {},
+When RunMigrations is called
+Then each new migration is recorded in order`, async () => {
+      await migrator.RunMigrations({
+        migrationFilePaths,
+        environmentId,
       });
 
+      expect(mockPutMigration.mock.calls.length).toBe(3);
+      expect(mockPutMigration.mock.calls[0][0]).toEqual({
+        environmentId,
+        migrationId: "2022-02-24_16-32-02_migration",
+      });
+      expect(mockPutMigration.mock.calls[1][0]).toEqual({
+        environmentId,
+        migrationId: "2022-02-24_16-32-03_migration",
+      });
+      expect(mockPutMigration.mock.calls[2][0]).toEqual({
+        environmentId,
+        migrationId: "2022-02-24_16-32-04_migration",
+      });
+    });
+
+    test(`Given a Contentful Migrator
+When RunMigrations is called
+And the name of a migration is invalid
+Then it rejects with an error`, async () => {
+      migrationFilePaths = ["path/to/invalid-migration-name.ts"];
+
+      const expectedError = new Error(
+        `migration ID format incorrect: migration ID must begin with a timestamp in the format YYYY-MM-DD_HH-mm-ss_ (got "invalid-migration-name")`,
+      );
+
+      await expect(
+        migrator.RunMigrations({
+          migrationFilePaths,
+          environmentId,
+        }),
+      ).rejects.toThrowError(expectedError);
+    });
+
+    test(`Given a Contentful Migrator
+When RunMigrations is called
+Then a list of the executed migrations is resolved`, async () => {
+      await expect(
+        migrator.RunMigrations({
+          migrationFilePaths,
+          environmentId,
+        }),
+      ).resolves.toEqual([
+        "path/to/2022-02-24_16-32-02_migration.ts",
+        "path/to/2022-02-24_16-32-03_migration.ts",
+        "a/different/path/to/2022-02-24_16-32-04_migration.ts",
+      ]);
+    });
+
+    test(`Given a Contentful Migrator
+When RunMigrations is called
+And a migration function rejects
+Then the method rejects with the error`, async () => {
       const expectedError = new Error("FUBAR");
 
       mockRunMigration.mockRejectedValue(expectedError);
 
-      const migrationFunctions: MigrationFunction[] = [
-        () => {
-          return Promise.resolve(0);
-        },
-      ];
-
       await expect(
         migrator.RunMigrations({
-          migrationFunctions,
+          migrationFilePaths,
           environmentId,
         }),
       ).rejects.toBe(expectedError);
     });
 
     test(`Given a Contentful Migrator
-And multiple migrations
-When RunMigrationFunctions is called
-And a migration function rejects
-Then no further migrations are executed`, async () => {
-      mockGetEnvironment.mockResolvedValue({
-        sys: {},
-      });
+When RunMigrations is called
+And recording the migration rejects
+Then the method rejects with the error`, async () => {
+      const expectedError = new Error("FUBAR");
 
+      mockPutMigration.mockRejectedValue(expectedError);
+
+      await expect(
+        migrator.RunMigrations({
+          migrationFilePaths,
+          environmentId,
+        }),
+      ).rejects.toBe(expectedError);
+    });
+
+    test(`Given a Contentful Migrator
+When RunMigrations is called
+And a migration function rejects
+Then only the successful migration is recorded
+And no further migrations are executed`, async () => {
       const expectedError = new Error("FUBAR");
 
       mockRunMigration.mockResolvedValueOnce({});
       mockRunMigration.mockRejectedValue(expectedError);
 
-      const migrationFunctions: MigrationFunction[] = [
-        () => {
-          return Promise.resolve(0);
-        },
-        () => {
-          return Promise.reject(1);
-        },
-        () => {
-          return Promise.resolve(2);
-        },
-      ];
-
       await expect(
-        migrator.RunMigrationFunctions({
-          migrationFunctions,
-          spaceId,
+        migrator.RunMigrations({
+          migrationFilePaths,
           environmentId,
-          answerYesToAllPrompts,
         }),
       ).rejects.toThrow();
 
       expect(mockRunMigration.mock.calls.length).toBe(2);
-      expect(mockRunMigration.mock.calls[0][0]).toEqual({
-        migrationFunction: migrationFunctions[0],
-        accessToken,
-        spaceId,
-        environmentId,
-        yes: answerYesToAllPrompts,
-      });
-      expect(mockRunMigration.mock.calls[1][0]).toEqual({
-        migrationFunction: migrationFunctions[1],
-        accessToken,
-        spaceId,
-        environmentId,
-        yes: answerYesToAllPrompts,
-      });
+      expect(mockPutMigration.mock.calls.length).toBe(1);
+    });
+
+    test(`Given a Contentful Migrator
+When RunMigrations is called
+And recording a migration rejects
+Then no further migrations are executed`, async () => {
+      const expectedError = new Error("FUBAR");
+
+      mockPutMigration.mockResolvedValueOnce(null);
+      mockPutMigration.mockRejectedValue(expectedError);
+
+      await expect(
+        migrator.RunMigrations({
+          migrationFilePaths,
+          environmentId,
+        }),
+      ).rejects.toThrow();
+
+      expect(mockRunMigration.mock.calls.length).toBe(2);
+      expect(mockPutMigration.mock.calls.length).toBe(2);
     });
   });
 
@@ -411,14 +552,6 @@ Then no further migrations are executed`, async () => {
     let mockUpdateEnvironmentAlias: jest.Mock;
 
     beforeEach(() => {
-      migrator = new ContentfulMigrator({
-        runMigration,
-        managementClient,
-        accessToken,
-        spaceId,
-        recorder,
-      });
-
       environmentId = "release";
 
       existingEnvironmentAlias = {
@@ -439,11 +572,7 @@ Then no further migrations are executed`, async () => {
 
       mockUpdateEnvironmentAlias = jest.fn();
       managementClient.environmentAlias.update = mockUpdateEnvironmentAlias;
-    });
 
-    test(`Given a Contentful Migrator
-When SetEnvironmentAsMaster is called
-Then the current master environment alias is retrieved from Contentful`, async () => {
       mockGetEnvironmentAlias.mockResolvedValue(existingEnvironmentAlias);
 
       mockUpdateEnvironmentAlias.mockResolvedValue({
@@ -454,6 +583,18 @@ Then the current master environment alias is retrieved from Contentful`, async (
         },
       });
 
+      migrator = new ContentfulMigrator({
+        runMigration,
+        managementClient,
+        accessToken,
+        spaceId,
+        recorder,
+      });
+    });
+
+    test(`Given a Contentful Migrator
+When SetEnvironmentAsMaster is called
+Then the current master environment alias is retrieved from Contentful`, async () => {
       await migrator.SetEnvironmentAsMaster({
         environmentId,
       });
@@ -470,16 +611,6 @@ Then the current master environment alias is retrieved from Contentful`, async (
 When SetEnvironmentAsMaster is called
 Then the environment ID in the environment alias returned from Contentful is updated
 And the environment alias is updated on Contentful`, async () => {
-      mockGetEnvironmentAlias.mockResolvedValue(existingEnvironmentAlias);
-
-      mockUpdateEnvironmentAlias.mockResolvedValue({
-        environment: {
-          sys: {
-            id: environmentId,
-          },
-        },
-      });
-
       await migrator.SetEnvironmentAsMaster({
         environmentId,
       });
@@ -506,16 +637,6 @@ And the environment alias is updated on Contentful`, async () => {
     test(`Given a Contentful Migrator
 When SetEnvironmentAsMaster is called
 Then the new master environment ID is resolved`, async () => {
-      mockGetEnvironmentAlias.mockResolvedValue(existingEnvironmentAlias);
-
-      mockUpdateEnvironmentAlias.mockResolvedValue({
-        environment: {
-          sys: {
-            id: environmentId,
-          },
-        },
-      });
-
       await expect(
         migrator.SetEnvironmentAsMaster({ environmentId }),
       ).resolves.toBe(environmentId);
@@ -555,8 +676,6 @@ And the call to Contentful updated environment alias rejects
 Then the method rejects with the error`, async () => {
       const expectedError = new Error("FUBAR");
 
-      mockGetEnvironmentAlias.mockResolvedValue(existingEnvironmentAlias);
-
       mockUpdateEnvironmentAlias.mockRejectedValue(expectedError);
 
       await expect(
@@ -570,6 +689,16 @@ Then the method rejects with the error`, async () => {
     let mockDelete: jest.Mock;
 
     beforeEach(() => {
+      environmentId = "release";
+
+      mockDelete = jest.fn();
+
+      managementClient.environment.delete = mockDelete;
+
+      mockDelete.mockResolvedValue({});
+
+      mockDeleteEnvironment.mockResolvedValue(null);
+
       migrator = new ContentfulMigrator({
         runMigration,
         managementClient,
@@ -577,19 +706,11 @@ Then the method rejects with the error`, async () => {
         spaceId,
         recorder,
       });
-
-      environmentId = "release";
-
-      mockDelete = jest.fn();
-
-      managementClient.environment.delete = mockDelete;
     });
 
     test(`Given a Contentful Migrator
 When DeleteEnvironment is called
 Then the environment is deleted in the Contentful space`, async () => {
-      mockDelete.mockResolvedValue({});
-
       await migrator.DeleteEnvironment({
         environmentId,
       });
@@ -604,9 +725,20 @@ Then the environment is deleted in the Contentful space`, async () => {
 
     test(`Given a Contentful Migrator
 When DeleteEnvironment is called
-Then the name of the deleted environment is resolved`, async () => {
-      mockDelete.mockResolvedValue({});
+Then the environment is deleted in the recorder`, async () => {
+      await migrator.DeleteEnvironment({
+        environmentId,
+      });
 
+      expect(mockDeleteEnvironment.mock.calls.length).toBe(1);
+      expect(mockDeleteEnvironment.mock.calls[0][0]).toEqual({
+        environmentId,
+      });
+    });
+
+    test(`Given a Contentful Migrator
+When DeleteEnvironment is called
+Then the name of the deleted environment is resolved`, async () => {
       await expect(
         migrator.DeleteEnvironment({
           environmentId,
@@ -627,6 +759,38 @@ Then the method rejects`, async () => {
           environmentId,
         }),
       ).rejects.toBe(expectedError);
+    });
+
+    test(`Given a Contentful Migrator
+When DeleteEnvironment is called
+And the Contentful Management client rejects
+Then the environment is not deleted in the recorder`, async () => {
+      const error = new Error("FUBAR");
+
+      mockDelete.mockRejectedValue(error);
+
+      await expect(
+        migrator.DeleteEnvironment({
+          environmentId,
+        }),
+      ).rejects.toThrow();
+
+      expect(mockDeleteEnvironment).not.toBeCalled();
+    });
+
+    test(`Given a Contentful Migrator
+When DeleteEnvironment is called
+And the recorder rejects
+Then the method rejects with the error`, async () => {
+      const expectedError = new Error("FUBAR");
+
+      mockDeleteEnvironment.mockRejectedValue(expectedError);
+
+      await expect(
+        migrator.DeleteEnvironment({
+          environmentId,
+        }),
+      ).rejects.toThrowError(expectedError);
     });
   });
 });

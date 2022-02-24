@@ -3,7 +3,7 @@ import {
   CreateTableCommand,
   CreateTableOutput,
   DynamoDBClient,
-  TableAlreadyExistsException,
+  ResourceInUseException,
 } from "@aws-sdk/client-dynamodb";
 import {
   DeleteCommand,
@@ -57,8 +57,7 @@ describe("DynamoDBRecorder", () => {
     test(`Given a DynamoDBRecorder
 And a DynamoDB table does not exist
 When CreateEnvironmentFromSource is called
-Then a DynamoDB table is created
-And the DynamoDB table key for the target environment ID is populated with an empty list of migrations`, async () => {
+Then a DynamoDB table is created`, async () => {
       const createTableOutput: CreateTableOutput = {};
       mockDynamoDBClientSendFn.mockResolvedValue(createTableOutput);
 
@@ -79,10 +78,6 @@ And the DynamoDB table key for the target environment ID is populated with an em
             AttributeName: "EnvironmentId",
             AttributeType: "S",
           },
-          {
-            AttributeName: "Migrations",
-            AttributeType: "SS",
-          },
         ],
         KeySchema: [
           {
@@ -90,24 +85,14 @@ And the DynamoDB table key for the target environment ID is populated with an em
             KeyType: "HASH",
           },
         ],
-      });
-
-      const expectedPutCommand = new PutCommand({
-        TableName: tableName,
-        Item: {
-          EnvironmentId: targetEnvironmentId,
-          Migrations: new Set<String>(),
-        },
+        BillingMode: "PAY_PER_REQUEST",
       });
 
       expect(mockDynamoDBClientSendFn.mock.calls.length).toBe(1);
       expect(JSON.stringify(mockDynamoDBClientSendFn.mock.calls[0][0])).toBe(
         JSON.stringify(expectedCreateTableCommand),
       );
-      expect(mockDynamoDBDocumentClientSendFn.mock.calls.length).toBe(1);
-      expect(
-        JSON.stringify(mockDynamoDBDocumentClientSendFn.mock.calls[0][0]),
-      ).toBe(JSON.stringify(expectedPutCommand));
+      expect(mockDynamoDBDocumentClientSendFn.mock.calls.length).toBe(0);
     });
 
     test(`Given a DynamoDBRecorder
@@ -116,8 +101,8 @@ When CreateEnvironmentFromSource is called
 Then a DynamoDB table is not created
 And the DynamoDB table is queried for the migrations that have been previously executed on the source
 And the DynamoDB table key for the target environment ID is populated with the returned migrations`, async () => {
-      const createTableOutput: TableAlreadyExistsException = {
-        name: "TableAlreadyExistsException",
+      const createTableOutput: ResourceInUseException = {
+        name: "ResourceInUseException",
         $fault: "client",
         $metadata: {},
       };
@@ -172,6 +157,46 @@ And the DynamoDB table key for the target environment ID is populated with the r
     });
 
     test(`Given a DynamoDBRecorder
+And a DynamoDB table exists
+When CreateEnvironmentFromSource is called
+And there are no previous migrations
+Then a DynamoDB table is not created
+And the DynamoDB table is queried for the migrations that have been previously executed on the source
+And the DynamoDB table key for the target environment ID is not populated with the returned migrations`, async () => {
+      const createTableOutput: ResourceInUseException = {
+        name: "ResourceInUseException",
+        $fault: "client",
+        $metadata: {},
+      };
+      mockDynamoDBClientSendFn.mockRejectedValue(createTableOutput);
+
+      const getCommandOutput: GetCommandOutput = {
+        ConsumedCapacity: {},
+        $metadata: {},
+      };
+      mockDynamoDBDocumentClientSendFn.mockResolvedValueOnce(getCommandOutput);
+
+      await recorder.CreateEnvironmentFromSource({
+        sourceEnvironmentId,
+        targetEnvironmentId,
+      });
+
+      const expectedGetCommand = new GetCommand({
+        TableName: tableName,
+        Key: {
+          EnvironmentId: sourceEnvironmentId,
+        },
+        ProjectionExpression: "Migrations",
+      });
+
+      expect(mockDynamoDBClientSendFn.mock.calls.length).toBe(1);
+      expect(mockDynamoDBDocumentClientSendFn.mock.calls.length).toBe(1);
+      expect(
+        JSON.stringify(mockDynamoDBDocumentClientSendFn.mock.calls[0][0]),
+      ).toBe(JSON.stringify(expectedGetCommand));
+    });
+
+    test(`Given a DynamoDBRecorder
 When CreateEnvironmentFromSource is called
 And the create table command rejects with an unexpected error
 Then no records are added to DynamoDB
@@ -199,8 +224,8 @@ When CreateEnvironmentFromSource is called
 And the get command rejects with an unexpected error
 Then no records are added to DynamoDB
 And the method rejects with the error`, async () => {
-      const createTableOutput: TableAlreadyExistsException = {
-        name: "TableAlreadyExistsException",
+      const createTableOutput: ResourceInUseException = {
+        name: "ResourceInUseException",
         $fault: "client",
         $metadata: {},
       };
@@ -228,8 +253,8 @@ And the method rejects with the error`, async () => {
 When CreateEnvironmentFromSource is called
 And the put command rejects with an error
 Then the method rejects with the error`, async () => {
-      const createTableOutput: TableAlreadyExistsException = {
-        name: "TableAlreadyExistsException",
+      const createTableOutput: ResourceInUseException = {
+        name: "ResourceInUseException",
         $fault: "client",
         $metadata: {},
       };
@@ -368,22 +393,18 @@ Then the list of previously applied migrations for the environment is returned f
     test(`Given a DynamoDBRecorder
 When ListAppliedMigrationsForEnvironment is called
 And no previous migrations are stored
-Then the method rejects with an error`, async () => {
+Then an empty StringSet is returned`, async () => {
       const getCommandOutput: GetCommandOutput = {
         ConsumedCapacity: {},
         $metadata: {},
       };
       mockDynamoDBDocumentClientSendFn.mockResolvedValue(getCommandOutput);
 
-      const expectedError = new Error(
-        `error getting migrations for environment "${environmentId}: no Item returned from DynamoDB`,
-      );
-
       await expect(
         recorder.ListAppliedMigrationsForEnvironment({
           environmentId,
         }),
-      ).rejects.toThrowError(expectedError);
+      ).resolves.toEqual(new Set<String>());
     });
 
     test(`Given a DynamoDBRecorder
@@ -435,7 +456,7 @@ Then the migration ID is appended to the Migrations string set for the Environme
         },
         UpdateExpression: "ADD Migrations :m",
         ExpressionAttributeValues: {
-          ":m": new Set<String>(migrationId),
+          ":m": new Set<String>([migrationId]),
         },
         ReturnValues: "NONE",
       });

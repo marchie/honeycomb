@@ -127,7 +127,14 @@ export class ContentfulMigrator implements Migrator {
     const newlyExecutedMigrations = [];
 
     for (const filePath of migrationFilePaths) {
-      const migrationId = this.getMigrationIdFromFilePath(filePath);
+      const migrationId =
+        ContentfulMigrator.getMigrationIdFromFilePath(filePath);
+
+      if (!ContentfulMigrator.migrationIdBeginsWithTimestamp(migrationId)) {
+        throw new Error(
+          `migration ID format incorrect: migration ID must begin with a timestamp in the format YYYY-MM-DD_HH-mm-ss_ (got "${migrationId}")`,
+        );
+      }
 
       if (previouslyAppliedMigrations.has(migrationId)) {
         continue;
@@ -212,9 +219,17 @@ export class ContentfulMigrator implements Migrator {
     );
   }
 
-  private getMigrationIdFromFilePath(filePath: string): string {
+  private static getMigrationIdFromFilePath(filePath: string): string {
     const { name } = ParsePath(filePath);
 
     return name;
+  }
+
+  private static migrationIdBeginsWithTimestamp(migrationId: string): boolean {
+    const regExp = new RegExp(
+      /^[\d]{4,}-[\d]{2}-[\d]{2}_[\d]{2}-[\d]{2}-[\d]{2}_[A-z0-9-_]+$/,
+    );
+
+    return regExp.test(migrationId);
   }
 }
