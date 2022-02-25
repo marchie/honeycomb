@@ -17,6 +17,57 @@ import { Tester } from "../lib/tester";
 import { ContentfulTester } from "../lib/contentful/ContentfulTester";
 
 (async () => {
+  const options = yargs
+    .scriptName("pipeline")
+    .option("accessTokenSecretId", {
+      describe:
+        "AWS Secrets Manager key containing the Contentful Access Token",
+      type: "string",
+      default: "contentful-token",
+    })
+    .option("spaceIdParameterStoreName", {
+      describe: "AWS Parameter Store name containing the Contentful Space ID",
+      type: "string",
+      default: "contentful-space-id",
+    })
+    .option("dynamoDBTableNameParameterStoreName", {
+      describe:
+        "AWS Parameter Store key containing the name of a DynamoDB table for storing migration records",
+      type: "string",
+      default: "contentful-migration-record-table-name",
+    })
+    .option("timeoutForDynamoDBTableToBecomeActive", {
+      describe:
+        "The maximum number of seconds to wait when creating a DynamoDB table for it to become active",
+      type: "number",
+      default: 30,
+    })
+    .option("targetEnvironmentId", {
+      describe: "Name of the new Contentful environment",
+      type: "string",
+      demandOption: true,
+    })
+    .option("migrationsDirectory", {
+      describe: "The local directory containing the migrations files",
+      type: "string",
+      demandOption: true,
+    })
+    .option("testsDirectory", {
+      describe: "Directory containing integration tests",
+      type: "string",
+      demandOption: true,
+    }).argv;
+
+  const {
+    accessTokenSecretId,
+    spaceIdParameterStoreName,
+    dynamoDBTableNameParameterStoreName,
+    timeoutForDynamoDBTableToBecomeActive,
+    targetEnvironmentId,
+    migrationsDirectory,
+    testsDirectory,
+  } = options;
+
   const AttemptTidyUp = async (
     migrator: Migrator,
     targetEnvironmentId: string,
@@ -63,50 +114,6 @@ import { ContentfulTester } from "../lib/contentful/ContentfulTester";
     }
   };
 
-  const options = yargs
-    .scriptName("pipeline")
-    .option("accessTokenSecretId", {
-      describe:
-        "AWS Secrets Manager key containing the Contentful Access Token",
-      type: "string",
-      default: "contentful-token",
-    })
-    .option("spaceIdParameterStoreName", {
-      describe: "AWS Parameter Store name containing the Contentful Space ID",
-      type: "string",
-      default: "contentful-space-id",
-    })
-    .option("dynamoDBTableNameParameterStoreName", {
-      describe:
-        "AWS Parameter Store key containing the name of a DynamoDB table for storing migration records",
-      type: "string",
-      default: "contentful-migration-record-table-name",
-    })
-    .option("targetEnvironmentId", {
-      describe: "Name of the new Contentful environment",
-      type: "string",
-      demandOption: true,
-    })
-    .option("migrationsDirectory", {
-      describe: "The local directory containing the migrations files",
-      type: "string",
-      demandOption: true,
-    })
-    .option("testsDirectory", {
-      describe: "Directory containing integration tests",
-      type: "string",
-      demandOption: true,
-    }).argv;
-
-  const {
-    accessTokenSecretId,
-    spaceIdParameterStoreName,
-    dynamoDBTableNameParameterStoreName,
-    targetEnvironmentId,
-    migrationsDirectory,
-    testsDirectory,
-  } = options;
-
   const awsSecretsManagerClient = new SecretsManagerClient({});
   const secretsManager = new SecretsManager({
     client: awsSecretsManagerClient,
@@ -144,6 +151,7 @@ import { ContentfulTester } from "../lib/contentful/ContentfulTester";
       dynamoDBClient,
       dynamoDBDocumentClient,
       tableName,
+      timeoutForDynamoDBTableToBecomeActive,
     });
 
     migrator = new ContentfulMigrator({
@@ -223,7 +231,7 @@ import { ContentfulTester } from "../lib/contentful/ContentfulTester";
 
     console.log(
       `Executed ${numberOfExecutedMigrations} migration${
-        numberOfExecutedMigrations === 1 ? "s" : ""
+        numberOfExecutedMigrations !== 1 ? "s" : ""
       }`,
     );
     for (const executedMigration of executedMigrations) {
@@ -231,7 +239,7 @@ import { ContentfulTester } from "../lib/contentful/ContentfulTester";
     }
     console.log(
       `(${numberOfSkippedMigrations} migration${
-        numberOfSkippedMigrations === 1 ? "s" : ""
+        numberOfSkippedMigrations !== 1 ? "s" : ""
       } skipped)`,
     );
   } catch (e) {
