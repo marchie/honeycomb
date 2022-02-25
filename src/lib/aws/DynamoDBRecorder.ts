@@ -5,7 +5,11 @@ import {
   PutMigrationProps,
   Recorder,
 } from "../recorder";
-import { CreateTableCommand, DynamoDBClient } from "@aws-sdk/client-dynamodb";
+import {
+  CreateTableCommand,
+  DescribeTableCommand,
+  DynamoDBClient,
+} from "@aws-sdk/client-dynamodb";
 import {
   DeleteCommand,
   DynamoDBDocumentClient,
@@ -18,6 +22,7 @@ export interface DynamoDBRecorderProps {
   dynamoDBClient: DynamoDBClient;
   dynamoDBDocumentClient: DynamoDBDocumentClient;
   tableName: string;
+  timeoutForDynamoDBTableToBecomeActive: number;
 }
 
 interface CreateTableIfNotExistsResult {
@@ -28,15 +33,19 @@ export class DynamoDBRecorder implements Recorder {
   private readonly dynamoDBClient: DynamoDBClient;
   private readonly dynamoDBDocumentClient: DynamoDBDocumentClient;
   private readonly tableName: string;
+  private readonly timeoutForDynamoDBTableToBecomeActive: number;
 
   constructor({
     dynamoDBClient,
     dynamoDBDocumentClient,
     tableName,
+    timeoutForDynamoDBTableToBecomeActive,
   }: DynamoDBRecorderProps) {
     this.dynamoDBClient = dynamoDBClient;
     this.dynamoDBDocumentClient = dynamoDBDocumentClient;
     this.tableName = tableName;
+    this.timeoutForDynamoDBTableToBecomeActive =
+      timeoutForDynamoDBTableToBecomeActive;
   }
 
   public async CreateEnvironmentFromSource({
@@ -120,10 +129,6 @@ export class DynamoDBRecorder implements Recorder {
 
     try {
       await this.dynamoDBClient.send(createTableCommand);
-
-      return {
-        tableCreated: true,
-      };
     } catch (e: any) {
       if (e.name && e.name === "ResourceInUseException") {
         return {
@@ -133,6 +138,12 @@ export class DynamoDBRecorder implements Recorder {
 
       throw e;
     }
+
+    await this.waitForTableToBeActive();
+
+    return {
+      tableCreated: true,
+    };
   }
 
   private async getAllMigrationsForEnvironment(
@@ -169,5 +180,38 @@ export class DynamoDBRecorder implements Recorder {
     });
 
     await this.dynamoDBDocumentClient.send(putMigrationsCommand);
+  }
+
+  private async waitForTableToBeActive(): Promise<void> {
+    const describeTableCommand = new DescribeTableCommand({
+      TableName: this.tableName,
+    });
+
+    for (let i = 0; i < this.timeoutForDynamoDBTableToBecomeActive; i++) {
+      const tableDescription = await this.dynamoDBClient.send(
+        describeTableCommand,
+      );
+
+      if (!tableDescription.Table) {
+        throw new Error(
+          `no table description returned for "${this.tableName}"`,
+        );
+      }
+
+      if (tableDescription.Table.TableStatus === "ACTIVE") {
+        return;
+      }
+
+      await new Promise((resolve) => {
+        const id = setTimeout(() => {
+          clearTimeout(id);
+          resolve(null);
+        }, 1000);
+      });
+    }
+
+    throw new Error(
+      `table "${this.tableName}" was not active within ${this.timeoutForDynamoDBTableToBecomeActive} seconds`,
+    );
   }
 }

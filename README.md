@@ -129,6 +129,115 @@ The pipeline does the following:
 9. Deletes the old `master` environment.
 10. Deletes the record of migrations for the old `master` environment.
 
+#### Pipeline output
+
+The output looks a little something like this:
+
+```shell
+➜ npx ts-node src/bin/pipeline.ts --migrationsDirectory "./src/migrations" --testsDirectory "./src/integration-tests" --targetEnvironmentId "release"
+Initialising pipeline...
+Pipeline initialised!
+Getting current Contentful master environment ID...
+Got current Contentful master environment ID: "hello-world"
+Creating new Contentful environment "release" from "hello-world"...
+Created new Contentful environment "release" from "hello-world"
+Running migrations against Contentful environment "release"...
+The following migration has been planned
+
+Environment: release
+
+Create Content Type article
+  - name: "Article"
+  - description: "A plain article with a title, description and a body"
+  - displayField: "title"
+
+  Create field title
+    - type: "Symbol"
+    - name: "Title"
+    - required: true
+
+  Create field description
+    - type: "Symbol"
+    - name: "Description"
+    - validations: [{"size":{"max":156}}]
+
+  Create field body
+    - type: "Text"
+    - name: "Body"
+    - required: true
+
+Publish Content Type article
+✔ Create Content Type article
+🎉  Migration successful
+Executed 1 migration
+- /Users/marchie/IdeaProjects/honeycomb/src/migrations/2022-02-18_16-21-00_create-article-content-type.ts
+(0 migrations skipped)
+Running integration tests on environment "release"...
+ PASS  src/integration-tests/article.test.ts
+  Article
+    Content Type
+      ✓ name is "Article" (2 ms)
+      ✓ description is "A plain article with a title, description and a body" (1 ms)
+      ✓ displayField is "title (1 ms)
+    Fields
+      ✓ Title (2 ms)
+      ✓ Description (2 ms)
+      ✓ Body (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        1.762 s
+Ran all test suites.
+Integrations tests passed on environment "release"
+Switching Contentful master environment alias to "release"
+Set Contentful master environment alias to "release"
+Running integration tests on "master" environment...
+ PASS  src/integration-tests/article.test.ts
+  Article
+    Content Type
+      ✓ name is "Article" (3 ms)
+      ✓ description is "A plain article with a title, description and a body" (1 ms)
+      ✓ displayField is "title (1 ms)
+    Fields
+      ✓ Title (2 ms)
+      ✓ Description (2 ms)
+      ✓ Body (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        0.811 s
+Ran all test suites.
+Integration tests passed on "master" environment
+Deleting old environment "hello-world"...
+Deleted old environment "hello-world"
+Pipeline completed successfully!
+```
+
+#### From the Contentful perspective
+
+In the beginning, the Contentful space has environment aliases set up and there is a single environment...
+
+![Initial Contentful Environment Settings, showing a single "hello-world" environment listed](docs/01_contentful_initial_environment_state.png)
+
+...and the Content Model is empty:
+
+![Initial Contentful Content Model state is completely empty](docs/02_contentful_content_model_state.png)
+
+Now, we run the pipeline! Contentful notifies you that the environment alias target has changed:
+
+![Contentful environment alias target changed notification](docs/03_contentful_environment_alias_changed.png)
+
+When you click **Continue on master**, you are taken to the new environment. Lo and behold! The previously empty Content
+Model now contains a Content Type!
+
+![Contentful Content Model state now has an Article Content Type](docs/04_contentful_content_model_state_changed.png)
+
+And heading back to the Environment Settings, you can see that the Environment has changed:
+
+![Contentful Environment Settings have changed; there's a different Environment named "release" - and the master Environment Alias points to the "release" environment](docs/05_contentful_changed_environment_state.png)
+
 ### Failure scenarios
 
 If the pipeline fails, it will attempt to revert any action taken:

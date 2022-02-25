@@ -2,6 +2,8 @@ import { DynamoDBRecorder } from "./DynamoDBRecorder";
 import {
   CreateTableCommand,
   CreateTableOutput,
+  DescribeTableCommand,
+  DescribeTableOutput,
   DynamoDBClient,
   ResourceInUseException,
 } from "@aws-sdk/client-dynamodb";
@@ -30,6 +32,7 @@ describe("DynamoDBRecorder", () => {
   let dynamoDBClient: DynamoDBClient;
   let dynamoDBDocumentClient: DynamoDBDocumentClient;
   let tableName: string;
+  let timeoutForDynamoDBTableToBecomeActive: number;
   let recorder: DynamoDBRecorder;
 
   beforeEach(() => {
@@ -38,10 +41,12 @@ describe("DynamoDBRecorder", () => {
     dynamoDBClient = new MockDynamoDBClient({});
     dynamoDBDocumentClient = new MockDynamoDBDocumentClient(dynamoDBClient);
     tableName = "TableName";
+    timeoutForDynamoDBTableToBecomeActive = 2;
     recorder = new DynamoDBRecorder({
       dynamoDBClient,
       dynamoDBDocumentClient,
       tableName,
+      timeoutForDynamoDBTableToBecomeActive,
     });
   });
 
@@ -59,12 +64,15 @@ And a DynamoDB table does not exist
 When CreateEnvironmentFromSource is called
 Then a DynamoDB table is created`, async () => {
       const createTableOutput: CreateTableOutput = {};
-      mockDynamoDBClientSendFn.mockResolvedValue(createTableOutput);
+      mockDynamoDBClientSendFn.mockResolvedValueOnce(createTableOutput);
 
-      const putCommandOutput: PutCommandOutput = {
-        $metadata: {},
+      const describeTableOutput: DescribeTableOutput = {
+        Table: {
+          TableName: tableName,
+          TableStatus: "ACTIVE",
+        },
       };
-      mockDynamoDBDocumentClientSendFn.mockResolvedValue(putCommandOutput);
+      mockDynamoDBClientSendFn.mockResolvedValueOnce(describeTableOutput);
 
       await recorder.CreateEnvironmentFromSource({
         sourceEnvironmentId,
@@ -88,11 +96,123 @@ Then a DynamoDB table is created`, async () => {
         BillingMode: "PAY_PER_REQUEST",
       });
 
-      expect(mockDynamoDBClientSendFn.mock.calls.length).toBe(1);
+      const expectedDescribeTableCommand = new DescribeTableCommand({
+        TableName: tableName,
+      });
+
+      expect(mockDynamoDBClientSendFn.mock.calls.length).toBe(2);
       expect(JSON.stringify(mockDynamoDBClientSendFn.mock.calls[0][0])).toBe(
         JSON.stringify(expectedCreateTableCommand),
       );
+      expect(JSON.stringify(mockDynamoDBClientSendFn.mock.calls[1][0])).toBe(
+        JSON.stringify(expectedDescribeTableCommand),
+      );
       expect(mockDynamoDBDocumentClientSendFn.mock.calls.length).toBe(0);
+    });
+
+    test(`Given a DynamoDBRecorder
+And a DynamoDB table does not exist
+When CreateEnvironmentFromSource is called
+And it takes some time for the created DynamoDB table to become active
+Then it waits for the table to become active`, async () => {
+      const createTableOutput: CreateTableOutput = {};
+      mockDynamoDBClientSendFn.mockResolvedValueOnce(createTableOutput);
+
+      const describeTableOutputCreating: DescribeTableOutput = {
+        Table: {
+          TableName: tableName,
+          TableStatus: "CREATING",
+        },
+      };
+      mockDynamoDBClientSendFn.mockResolvedValueOnce(
+        describeTableOutputCreating,
+      );
+
+      const describeTableOutputActive: DescribeTableOutput = {
+        Table: {
+          TableName: tableName,
+          TableStatus: "ACTIVE",
+        },
+      };
+      mockDynamoDBClientSendFn.mockResolvedValueOnce(describeTableOutputActive);
+
+      await recorder.CreateEnvironmentFromSource({
+        sourceEnvironmentId,
+        targetEnvironmentId,
+      });
+
+      expect(mockDynamoDBClientSendFn.mock.calls.length).toBe(3);
+    });
+
+    test(`Given a DynamoDBRecorder
+And a DynamoDB table does not exist
+When CreateEnvironmentFromSource is called
+And the describe table output does not return a table
+Then rejects with an error`, async () => {
+      const createTableOutput: CreateTableOutput = {};
+      mockDynamoDBClientSendFn.mockResolvedValueOnce(createTableOutput);
+
+      const describeTableOutput: DescribeTableOutput = {};
+      mockDynamoDBClientSendFn.mockResolvedValue(describeTableOutput);
+
+      const expectedError = new Error(
+        `no table description returned for "TableName"`,
+      );
+
+      await expect(
+        recorder.CreateEnvironmentFromSource({
+          sourceEnvironmentId,
+          targetEnvironmentId,
+        }),
+      ).rejects.toThrowError(expectedError);
+    });
+
+    test(`Given a DynamoDBRecorder
+And a DynamoDB table does not exist
+When CreateEnvironmentFromSource is called
+And it takes some time for the created DynamoDB table to become active
+And the timeout is exceeded
+Then rejects with an error`, async () => {
+      const createTableOutput: CreateTableOutput = {};
+      mockDynamoDBClientSendFn.mockResolvedValueOnce(createTableOutput);
+
+      const describeTableOutputCreating: DescribeTableOutput = {
+        Table: {
+          TableName: tableName,
+          TableStatus: "CREATING",
+        },
+      };
+      mockDynamoDBClientSendFn.mockResolvedValue(describeTableOutputCreating);
+
+      const expectedError = new Error(
+        `table "TableName" was not active within 2 seconds`,
+      );
+
+      await expect(
+        recorder.CreateEnvironmentFromSource({
+          sourceEnvironmentId,
+          targetEnvironmentId,
+        }),
+      ).rejects.toThrowError(expectedError);
+    });
+
+    test(`Given a DynamoDBRecorder
+And a DynamoDB table does not exist
+When CreateEnvironmentFromSource is called
+And the describe table command rejects
+Then rejects with an error`, async () => {
+      const createTableOutput: CreateTableOutput = {};
+      mockDynamoDBClientSendFn.mockResolvedValueOnce(createTableOutput);
+
+      const expectedError = new Error("FUBAR");
+      mockDynamoDBClientSendFn.mockRejectedValue(expectedError);
+
+      await expect(
+        recorder.CreateEnvironmentFromSource({
+          sourceEnvironmentId,
+          targetEnvironmentId,
+        }),
+      ).rejects.toThrowError(expectedError);
     });
 
     test(`Given a DynamoDBRecorder
