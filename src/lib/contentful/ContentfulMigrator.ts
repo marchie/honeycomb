@@ -16,6 +16,7 @@ import {
   Migrator,
   RunMigrationsProps,
   SetEnvironmentAsMasterProps,
+  SetEnvironmentAsMasterResult,
   TestEnvironmentProps,
 } from "../migrator";
 import { Recorder } from "../recorder";
@@ -80,6 +81,16 @@ export class ContentfulMigrator implements Migrator {
     this.accessToken = accessToken;
     this.spaceId = spaceId;
     this.recorder = recorder;
+  }
+
+  public async GetCurrentMasterEnvironmentId(): Promise<string> {
+    const masterEnvironmentAlias =
+      await this.managementClient.environmentAlias.get({
+        environmentAliasId: "master",
+        spaceId: this.spaceId,
+      });
+
+    return masterEnvironmentAlias.environment.sys.id;
   }
 
   public async CreateEnvironmentFromSource({
@@ -161,18 +172,20 @@ export class ContentfulMigrator implements Migrator {
 
   public async TestEnvironment({
     environmentId,
-    testFunction,
+    tester,
   }: TestEnvironmentProps): Promise<boolean> {
-    return false;
+    return tester.IntegrationTest({ environmentId });
   }
 
   public async SetEnvironmentAsMaster({
     environmentId,
-  }: SetEnvironmentAsMasterProps): Promise<string> {
+  }: SetEnvironmentAsMasterProps): Promise<SetEnvironmentAsMasterResult> {
     const alias = await this.managementClient.environmentAlias.get({
       spaceId: this.spaceId,
       environmentAliasId: "master",
     });
+
+    const oldMasterEnvironmentId = alias.environment.sys.id;
 
     alias.environment.sys.id = environmentId;
 
@@ -186,7 +199,10 @@ export class ContentfulMigrator implements Migrator {
       },
     );
 
-    return updatedAlias.environment.sys.id;
+    return {
+      oldMasterEnvironmentId,
+      newMasterEnvironmentId: updatedAlias.environment.sys.id,
+    };
   }
 
   public async DeleteEnvironment({

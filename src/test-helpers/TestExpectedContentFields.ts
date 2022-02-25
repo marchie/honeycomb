@@ -12,8 +12,6 @@ export function TestExpectedContentFields(
   }
 
   for (const [key, val] of Object.entries(expectedContentFields)) {
-    test(`${key} is "${val}`, () => {
-      expect(field[key as keyof ContentFields]).toEqual(val);
-    });
+    expect(field[key as keyof ContentFields]).toEqual(val);
   }
 }

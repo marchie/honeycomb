@@ -1,3 +1,5 @@
+import { Tester } from "./tester";
+
 export interface CreateEnvironmentFromSourceProps {
   sourceEnvironmentId: string;
   targetEnvironmentId: string;
@@ -10,11 +12,16 @@ export interface RunMigrationsProps {
 
 export interface TestEnvironmentProps {
   environmentId: string;
-  testFunction: () => Promise<boolean>;
+  tester: Tester;
 }
 
 export interface SetEnvironmentAsMasterProps {
   environmentId: string;
+}
+
+export interface SetEnvironmentAsMasterResult {
+  oldMasterEnvironmentId: string;
+  newMasterEnvironmentId: string;
 }
 
 export interface DeleteEnvironmentProps {
@@ -22,6 +29,7 @@ export interface DeleteEnvironmentProps {
 }
 
 export interface Migrator {
+  GetCurrentMasterEnvironmentId: () => Promise<string>;
   CreateEnvironmentFromSource: (
     props: CreateEnvironmentFromSourceProps,
   ) => Promise<string>;
@@ -29,6 +37,6 @@ export interface Migrator {
   TestEnvironment: (props: TestEnvironmentProps) => Promise<boolean>;
   SetEnvironmentAsMaster: (
     props: SetEnvironmentAsMasterProps,
-  ) => Promise<string>;
+  ) => Promise<SetEnvironmentAsMasterResult>;
   DeleteEnvironment: (props: DeleteEnvironmentProps) => Promise<string>;
 }

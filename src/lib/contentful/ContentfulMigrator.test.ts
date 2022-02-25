@@ -7,7 +7,10 @@ import {
   mockListAppliedMigrationsFromEnvironment,
   mockPutMigration,
 } from "../__mocks__/recorder";
+import { MockTester, mockIntegrationTest } from "../__mocks__/tester";
 import { Recorder } from "../recorder";
+import { Tester } from "../tester";
+import { SetEnvironmentAsMasterResult } from "../migrator";
 
 describe("Contentful Migrator", () => {
   let runMigration: (config: RunMigrationConfig) => Promise<any>;
@@ -38,6 +41,75 @@ describe("Contentful Migrator", () => {
     mockPutMigration.mockReset();
 
     recorder = new MockRecorder();
+  });
+
+  describe("GetCurrentMasterEnvironmentId", () => {
+    let existingEnvironmentAlias: object;
+    let mockGetEnvironmentAlias: jest.Mock;
+
+    beforeEach(() => {
+      existingEnvironmentAlias = {
+        environment: {
+          sys: {
+            id: "existing-master-environment",
+            type: "Link",
+            linkType: "Environment",
+          },
+        },
+        sys: {
+          irrelevant: "for-this",
+        },
+      };
+
+      mockGetEnvironmentAlias = jest.fn();
+      managementClient.environmentAlias.get = mockGetEnvironmentAlias;
+
+      mockGetEnvironmentAlias.mockResolvedValue(existingEnvironmentAlias);
+
+      migrator = new ContentfulMigrator({
+        runMigration,
+        managementClient,
+        accessToken,
+        spaceId,
+        recorder,
+      });
+    });
+
+    test(`Given a Contentful Migrator
+When GetCurrentMasterEnvironmentId is called
+Then the current master environment alias is retrieved from Contentful`, async () => {
+      await migrator.GetCurrentMasterEnvironmentId();
+
+      expect(runMigration).not.toBeCalled();
+      expect(mockGetEnvironmentAlias.mock.calls.length).toBe(1);
+      expect(mockGetEnvironmentAlias.mock.calls[0][0]).toEqual({
+        spaceId,
+        environmentAliasId: "master",
+      });
+    });
+
+    test(`Given a Contentful Migrator
+When SetEnvironmentAsMaster is called
+Then the current master environment ID is resolved`, async () => {
+      const expectedResult = "existing-master-environment";
+
+      await expect(migrator.GetCurrentMasterEnvironmentId()).resolves.toEqual(
+        expectedResult,
+      );
+    });
+
+    test(`Given a Contentful Migrator
+When GetCurrentMasterEnvironmentId is called
+And the call to Contentful get environment alias rejects
+Then the method rejects with the error`, async () => {
+      const expectedError = new Error("FUBAR");
+
+      mockGetEnvironmentAlias.mockRejectedValue(expectedError);
+
+      await expect(migrator.GetCurrentMasterEnvironmentId()).rejects.toBe(
+        expectedError,
+      );
+    });
   });
 
   describe("CreateEnvironmentFromSource", () => {
@@ -545,6 +617,67 @@ Then no further migrations are executed`, async () => {
     });
   });
 
+  describe("TestEnvironment", () => {
+    let environmentId: string;
+    let tester: Tester;
+
+    beforeEach(() => {
+      environmentId = "release";
+
+      tester = new MockTester();
+
+      mockIntegrationTest.mockReset();
+
+      migrator = new ContentfulMigrator({
+        runMigration,
+        managementClient,
+        accessToken,
+        spaceId,
+        recorder,
+      });
+    });
+
+    test(`Given a Contentful Migrator
+When TestEnvironment is called
+Then the integration tests are run against the environment`, async () => {
+      await migrator.TestEnvironment({
+        environmentId,
+        tester,
+      });
+
+      expect(mockIntegrationTest.mock.calls.length).toBe(1);
+      expect(mockIntegrationTest.mock.calls[0][0]).toEqual({ environmentId });
+    });
+
+    test(`Given a Contentful Migrator
+When TestEnvironment is called
+And the tests pass
+Then the resolved value is true`, async () => {
+      mockIntegrationTest.mockResolvedValue(true);
+
+      await expect(
+        migrator.TestEnvironment({
+          environmentId,
+          tester,
+        }),
+      ).resolves.toBe(true);
+    });
+
+    test(`Given a Contentful Migrator
+When TestEnvironment is called
+And the tests fail
+Then the resolved value is false`, async () => {
+      mockIntegrationTest.mockResolvedValue(false);
+
+      await expect(
+        migrator.TestEnvironment({
+          environmentId,
+          tester,
+        }),
+      ).resolves.toBe(false);
+    });
+  });
+
   describe("SetEnvironmentAsMaster", () => {
     let environmentId: string;
     let existingEnvironmentAlias: object;
@@ -636,10 +769,15 @@ And the environment alias is updated on Contentful`, async () => {
 
     test(`Given a Contentful Migrator
 When SetEnvironmentAsMaster is called
-Then the new master environment ID is resolved`, async () => {
+Then SetEnvironmentAsMasterResult is resolved`, async () => {
+      const expectedResult: SetEnvironmentAsMasterResult = {
+        oldMasterEnvironmentId: "existing-master-environment",
+        newMasterEnvironmentId: environmentId,
+      };
+
       await expect(
         migrator.SetEnvironmentAsMaster({ environmentId }),
-      ).resolves.toBe(environmentId);
+      ).resolves.toEqual(expectedResult);
     });
 
     test(`Given a Contentful Migrator
