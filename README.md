@@ -129,9 +129,17 @@ The pipeline does the following:
 9. Deletes the old `master` environment.
 10. Deletes the record of migrations for the old `master` environment.
 
-#### Pipeline output
+### Demonstration
 
-The output looks a little something like this:
+In the beginning, the Contentful space has environment aliases set up and there is a single environment...
+
+![Initial Contentful Environment Settings, showing a single "hello-world" environment listed](docs/01_contentful_initial_environment_state.png)
+
+...and the Content Model is empty:
+
+![Initial Contentful Content Model state is completely empty](docs/02_contentful_content_model_state.png)
+
+Now, we run the pipeline! 
 
 ```shell
 ➜ npx ts-node src/bin/pipeline.ts --migrationsDirectory "./src/migrations" --testsDirectory "./src/integration-tests" --targetEnvironmentId "release"
@@ -215,17 +223,7 @@ Deleted old environment "hello-world"
 Pipeline completed successfully!
 ```
 
-#### From the Contentful perspective
-
-In the beginning, the Contentful space has environment aliases set up and there is a single environment...
-
-![Initial Contentful Environment Settings, showing a single "hello-world" environment listed](docs/01_contentful_initial_environment_state.png)
-
-...and the Content Model is empty:
-
-![Initial Contentful Content Model state is completely empty](docs/02_contentful_content_model_state.png)
-
-Now, we run the pipeline! Contentful notifies you that the environment alias target has changed:
+Back in the browser, Contentful notifies you that the environment alias target has changed:
 
 ![Contentful environment alias target changed notification](docs/03_contentful_environment_alias_changed.png)
 
