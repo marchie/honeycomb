@@ -142,7 +142,7 @@ In the beginning, the Contentful space has environment aliases set up and there 
 Now, we run the pipeline! 
 
 ```shell
-➜ npx ts-node src/bin/pipeline.ts --migrationsDirectory "./src/migrations" --testsDirectory "./src/integration-tests" --targetEnvironmentId "release"
+➜  npx ts-node src/bin/pipeline.ts --migrationsDirectory "./src/migrations" --testsDirectory "./src/integration-tests" --targetEnvironmentId "release"
 Initialising pipeline...
 Pipeline initialised!
 Getting current Contentful master environment ID...
@@ -235,6 +235,63 @@ Model now contains a Content Type!
 And heading back to the Environment Settings, you can see that the Environment has changed:
 
 ![Contentful Environment Settings have changed; there's a different Environment named "release" - and the master Environment Alias points to the "release" environment](docs/05_contentful_changed_environment_state.png)
+
+Running the pipeline again, the previously executed migration is not repeated, but all other steps in the pipeline
+run the same:
+
+```shell
+➜  npx ts-node src/bin/pipeline.ts --migrationsDirectory "./src/migrations" --testsDirectory "./src/integration-tests" --targetEnvironmentId "release-2"
+Initialising pipeline...
+Pipeline initialised!
+Getting current Contentful master environment ID...
+Got current Contentful master environment ID: "release"
+Creating new Contentful environment "release-2" from "release"...
+Created new Contentful environment "release-2" from "release"
+Running migrations against Contentful environment "release-2"...
+Executed 0 migrations
+(1 migration skipped)
+Running integration tests on environment "release-2"...
+ PASS  src/integration-tests/article.test.ts
+  Article
+    Content Type
+      ✓ name is "Article" (3 ms)
+      ✓ description is "A plain article with a title, description and a body" (1 ms)
+      ✓ displayField is "title (1 ms)
+    Fields
+      ✓ Title (3 ms)
+      ✓ Description (2 ms)
+      ✓ Body (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        2.087 s
+Ran all test suites.
+Integrations tests passed on environment "release-2"
+Switching Contentful master environment alias to "release-2"
+Set Contentful master environment alias to "release-2"
+Running integration tests on "master" environment...
+ PASS  src/integration-tests/article.test.ts
+  Article
+    Content Type
+      ✓ name is "Article" (3 ms)
+      ✓ description is "A plain article with a title, description and a body" (1 ms)
+      ✓ displayField is "title (1 ms)
+    Fields
+      ✓ Title (2 ms)
+      ✓ Description (2 ms)
+      ✓ Body (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        0.726 s
+Ran all test suites.
+Integration tests passed on "master" environment
+Deleting old environment "release"...
+Deleted old environment "release"
+Pipeline completed successfully!
+```
 
 ### Failure scenarios
 
